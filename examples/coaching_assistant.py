@@ -64,9 +64,8 @@ Guidelines:
 - Give specific, actionable suggestions
 - Track their progress across attempts and acknowledge improvements
 - Keep feedback concise (2-3 sentences) unless they ask for detailed analysis
-
-Emotion tags you can use: [happy], [excited], [calm], [serious], [friendly]
-Use these naturally to make your coaching feel supportive.
+- Use plain text only - no markdown, bullet points, or special formatting
+- Speak naturally and conversationally
 
 Start by asking what they'd like to practice today.""",
 
@@ -80,9 +79,7 @@ Guidelines:
 - Suggest modifications if they mention difficulty
 - Keep responses SHORT during active exercise (1-2 sentences)
 - Celebrate completions and personal bests
-
-Emotion tags you can use: [excited], [happy], [serious], [calm]
-Use [excited] for motivation, [serious] for form corrections.
+- Use plain text only - no markdown or special formatting
 
 Start by asking what workout they're doing today.""",
 
@@ -96,9 +93,7 @@ Guidelines:
 - Mix encouragement with corrections (sandwich method)
 - Occasionally ask them to repeat difficult words/phrases
 - Keep explanations simple and brief
-
-Emotion tags you can use: [friendly], [happy], [calm], [excited]
-Use [friendly] for corrections, [excited] for celebrations.
+- Use plain text only - no markdown or special formatting
 
 The user is learning: {language}
 Start by greeting them in their target language and asking what they'd like to practice.""",
@@ -112,12 +107,11 @@ Guidelines:
 - Suggest stronger ways to phrase their experiences
 - Help them quantify achievements and tell compelling stories
 - Be professional but supportive
-- After each answer, give brief feedback then move to the next question
+- After each answer, give brief feedback then ask the next question
+- Use plain text only - no markdown, numbered lists, or special formatting
+- Speak conversationally as if in a real interview
 
-Emotion tags you can use: [serious], [friendly], [calm], [happy]
-Use [serious] for professional questions, [friendly] for feedback.
-
-Start by asking what role/industry they're interviewing for.""",
+Start by asking what role or industry they're interviewing for.""",
 }
 
 
@@ -206,6 +200,9 @@ class CoachingAssistant:
 
     async def _listen_loop(self):
         """Main listening loop with auto-reconnection."""
+        response_delay = 1.5  # Wait this many seconds after last speech before responding
+        pending_response_task = None
+
         while self.running:
             try:
                 # Get fresh audio stream with VAD filtering
@@ -231,33 +228,27 @@ class CoachingAssistant:
                     console.print(f"[green]You:[/green] {text}")
                     self.accumulated_text.append(text)
 
-                    # Determine when to respond based on coaching mode
-                    if self.mode == "interview":
-                        # Interview mode: respond after each answer (back-and-forth)
-                        await self._provide_feedback()
-                    elif self.mode == "fitness":
-                        # Fitness mode: respond after each command/update
-                        await self._provide_feedback()
-                    else:
-                        # Speaking/language mode: wait for natural pause or trigger phrases
-                        should_respond = (
-                            text.endswith("?") or
-                            any(phrase in text.lower() for phrase in [
-                                "what do you think",
-                                "how was that",
-                                "any feedback",
-                                "ready",
-                                "let me try",
-                                "done",
-                                "finished",
-                            ])
-                        )
-                        if should_respond or len(self.accumulated_text) >= 3:
+                    # Cancel any pending response (user is still talking)
+                    if pending_response_task and not pending_response_task.done():
+                        pending_response_task.cancel()
+                        try:
+                            await pending_response_task
+                        except asyncio.CancelledError:
+                            pass
+
+                    # Schedule a delayed response
+                    async def delayed_response():
+                        await asyncio.sleep(response_delay)
+                        if self.accumulated_text:
                             await self._provide_feedback()
+
+                    pending_response_task = asyncio.create_task(delayed_response())
 
             except Exception as e:
                 if "1011" in str(e) or "timeout" in str(e).lower():
-                    # Deepgram timeout - reconnect
+                    # Deepgram timeout - provide feedback if we have accumulated text
+                    if self.accumulated_text:
+                        await self._provide_feedback()
                     console.print("[dim]Reconnecting...[/dim]")
                     await asyncio.sleep(0.5)
                     # Recreate STT provider for fresh connection
