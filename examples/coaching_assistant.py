@@ -211,11 +211,15 @@ class CoachingAssistant:
     async def _listen_loop(self):
         """Main listening loop with auto-reconnection."""
         response_delay = 1.5  # Wait 1.5 seconds after last speech before responding
-        pending_response_task = None
+        last_speech_time = None
 
         while self.running:
             try:
-                # Get fresh audio stream with VAD filtering
+                # Create fresh STT connection for each listening session
+                await self.stt.close()
+                self.stt = create_stt_provider(self.config)
+
+                # Get fresh audio stream
                 audio_stream = self.mic.stream()
                 if self.vad:
                     audio_stream = self.vad.filter_speech(audio_stream)
@@ -237,33 +241,26 @@ class CoachingAssistant:
 
                     console.print(f"[green]You:[/green] {text}")
                     self.accumulated_text.append(text)
+                    last_speech_time = datetime.now()
 
-                    # Cancel any pending response (user is still talking)
-                    if pending_response_task and not pending_response_task.done():
-                        pending_response_task.cancel()
-                        try:
-                            await pending_response_task
-                        except asyncio.CancelledError:
-                            pass
+                    # Wait for pause then respond
+                    await asyncio.sleep(response_delay)
 
-                    # Schedule a delayed response
-                    async def delayed_response():
-                        await asyncio.sleep(response_delay)
+                    # Check if user said more while we waited
+                    if last_speech_time and (datetime.now() - last_speech_time).total_seconds() >= response_delay:
                         if self.accumulated_text:
                             await self._provide_feedback()
-
-                    pending_response_task = asyncio.create_task(delayed_response())
+                            # Break to restart STT connection after response
+                            break
 
             except Exception as e:
-                if "1011" in str(e) or "timeout" in str(e).lower():
-                    # Deepgram timeout - provide feedback if we have accumulated text
+                error_str = str(e).lower()
+                if "1011" in str(e) or "timeout" in error_str or "closed" in error_str or "connection" in error_str:
+                    # Deepgram timeout/disconnect - provide feedback if we have accumulated text
                     if self.accumulated_text:
                         await self._provide_feedback()
                     console.print("[dim]Reconnecting...[/dim]")
                     await asyncio.sleep(0.5)
-                    # Recreate STT provider for fresh connection
-                    await self.stt.close()
-                    self.stt = create_stt_provider(self.config)
                     continue
                 else:
                     raise
