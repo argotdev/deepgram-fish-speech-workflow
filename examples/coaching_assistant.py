@@ -135,15 +135,17 @@ class CoachingAssistant:
             echo_mode=False,  # We want LLM responses, not echo
         )
 
-        # Increase Deepgram utterance end timeout for longer pauses
-        self.config.deepgram.utterance_end_ms = 1000  # Wait 1 second of silence before finalizing
+        # Deepgram settings
+        self.config.deepgram.utterance_end_ms = 1500  # Wait 1.5s of silence before finalizing
 
-        # Disable local VAD - let Deepgram handle endpoint detection
-        # Local VAD can cut off speech too aggressively
-        self.config.vad.enabled = False
+        # VAD settings - help detect when user stops speaking
+        self.config.vad.enabled = True
+        self.config.vad.min_silence_duration_ms = 1000  # 1s silence to end utterance
 
-        # Fish Audio voice - set FISH_SPEECH_REFERENCE_ID in .env for custom voice
-        # Without reference_id, Fish Audio uses its default voice
+        # Fish Audio voice - "Friendly Women" (consistent, professional voice)
+        # Override with FISH_SPEECH_REFERENCE_ID in .env for custom voice
+        if not self.config.fish_speech.reference_id:
+            self.config.fish_speech.reference_id = "b545c585f631496c914815291da4e893"
 
         # Configure LLM
         self.config.llm.provider = llm_provider
