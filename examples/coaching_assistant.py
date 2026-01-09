@@ -231,22 +231,29 @@ class CoachingAssistant:
                     console.print(f"[green]You:[/green] {text}")
                     self.accumulated_text.append(text)
 
-                    # Check if we should give feedback
-                    should_respond = (
-                        text.endswith("?") or
-                        any(phrase in text.lower() for phrase in [
-                            "what do you think",
-                            "how was that",
-                            "any feedback",
-                            "ready",
-                            "let me try",
-                            "done",
-                            "finished",
-                        ])
-                    )
-
-                    if should_respond or len(self.accumulated_text) >= 3:
+                    # Determine when to respond based on coaching mode
+                    if self.mode == "interview":
+                        # Interview mode: respond after each answer (back-and-forth)
                         await self._provide_feedback()
+                    elif self.mode == "fitness":
+                        # Fitness mode: respond after each command/update
+                        await self._provide_feedback()
+                    else:
+                        # Speaking/language mode: wait for natural pause or trigger phrases
+                        should_respond = (
+                            text.endswith("?") or
+                            any(phrase in text.lower() for phrase in [
+                                "what do you think",
+                                "how was that",
+                                "any feedback",
+                                "ready",
+                                "let me try",
+                                "done",
+                                "finished",
+                            ])
+                        )
+                        if should_respond or len(self.accumulated_text) >= 3:
+                            await self._provide_feedback()
 
             except Exception as e:
                 if "1011" in str(e) or "timeout" in str(e).lower():
