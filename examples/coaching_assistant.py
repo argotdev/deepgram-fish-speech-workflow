@@ -138,9 +138,8 @@ class CoachingAssistant:
         # Deepgram settings
         self.config.deepgram.utterance_end_ms = 1500  # Wait 1.5s of silence before finalizing
 
-        # VAD settings - help detect when user stops speaking
-        self.config.vad.enabled = True
-        self.config.vad.min_silence_duration_ms = 1000  # 1s silence to end utterance
+        # Disable VAD - Deepgram handles endpoint detection
+        self.config.vad.enabled = False
 
         # Fish Audio voice - "Friendly Women" (consistent, professional voice)
         # Override with FISH_SPEECH_REFERENCE_ID in .env for custom voice
@@ -165,8 +164,8 @@ class CoachingAssistant:
         self.mic = MicrophoneInput(self.config.audio)
         self.speaker = SpeakerOutput(self.config.audio)
 
-        # VAD
-        self.vad = create_vad(self.config.vad)
+        # VAD - only create if enabled
+        self.vad = create_vad(self.config.vad) if self.config.vad.enabled else None
 
         # Conversation state
         self.conversation: list[Message] = []
