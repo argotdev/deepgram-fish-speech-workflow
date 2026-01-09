@@ -211,61 +211,36 @@ class CoachingAssistant:
             ))
 
     async def _listen_loop(self):
-        """Main listening loop with auto-reconnection."""
-        response_delay = 1.5  # Wait 1.5 seconds after last speech before responding
-        last_speech_time = None
+        """Simple listen loop - respond after each final transcript."""
+        # Use the same pattern as basic_loop which works
+        audio_stream = self.mic.stream()
+        if self.vad:
+            audio_stream = self.vad.filter_speech(audio_stream)
 
-        while self.running:
-            try:
-                # Create fresh STT connection for each listening session
-                await self.stt.close()
-                self.stt = create_stt_provider(self.config)
+        try:
+            async for transcript in self.stt.transcribe_stream(audio_stream):
+                if not self.running:
+                    break
 
-                # Get fresh audio stream
-                audio_stream = self.mic.stream()
-                if self.vad:
-                    audio_stream = self.vad.filter_speech(audio_stream)
-
-                # Process transcriptions
-                async for transcript in self.stt.transcribe_stream(audio_stream):
-                    if not self.running:
-                        break
-
-                    # Show interim results
-                    if not transcript.is_final:
-                        console.print(f"[dim]... {transcript.text}[/dim]", end="\r")
-                        continue
-
-                    # Handle final transcript
-                    text = transcript.text.strip()
-                    if not text:
-                        continue
-
-                    console.print(f"[green]You:[/green] {text}")
-                    self.accumulated_text.append(text)
-                    last_speech_time = datetime.now()
-
-                    # Wait for pause then respond
-                    await asyncio.sleep(response_delay)
-
-                    # Check if user said more while we waited
-                    if last_speech_time and (datetime.now() - last_speech_time).total_seconds() >= response_delay:
-                        if self.accumulated_text:
-                            await self._provide_feedback()
-                            # Break to restart STT connection after response
-                            break
-
-            except Exception as e:
-                error_str = str(e).lower()
-                if "1011" in str(e) or "timeout" in error_str or "closed" in error_str or "connection" in error_str:
-                    # Deepgram timeout/disconnect - provide feedback if we have accumulated text
-                    if self.accumulated_text:
-                        await self._provide_feedback()
-                    console.print("[dim]Reconnecting...[/dim]")
-                    await asyncio.sleep(0.5)
+                # Show interim results
+                if not transcript.is_final:
+                    console.print(f"[dim]... {transcript.text}[/dim]", end="\r")
                     continue
-                else:
-                    raise
+
+                # Handle final transcript
+                text = transcript.text.strip()
+                if not text:
+                    continue
+
+                console.print(f"[green]You:[/green] {text}")
+
+                # Respond immediately to each final transcript
+                self.accumulated_text = [text]
+                await self._provide_feedback()
+
+        except Exception as e:
+            if self.running:
+                console.print(f"[red]Error: {e}[/red]")
 
     async def _get_initial_greeting(self) -> str:
         """Get initial greeting from the coach."""
