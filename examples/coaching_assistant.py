@@ -135,6 +135,9 @@ class CoachingAssistant:
             echo_mode=False,  # We want LLM responses, not echo
         )
 
+        # Increase Deepgram utterance end timeout for longer pauses
+        self.config.deepgram.utterance_end_ms = 2500  # Wait 2.5s of silence before finalizing
+
         # Configure LLM
         self.config.llm.provider = llm_provider
 
@@ -200,7 +203,7 @@ class CoachingAssistant:
 
     async def _listen_loop(self):
         """Main listening loop with auto-reconnection."""
-        response_delay = 1.5  # Wait this many seconds after last speech before responding
+        response_delay = 3.0  # Wait 3 seconds after last speech before responding
         pending_response_task = None
 
         while self.running:
