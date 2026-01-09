@@ -183,54 +183,13 @@ class CoachingAssistant:
             title="Real-time Coaching Assistant",
         ))
 
-        # Start with a greeting from the coach
+        # Start with a greeting from the coach (before starting STT)
         await self._coach_speak(await self._get_initial_greeting())
 
+        console.print("[dim]Listening... (speak now)[/dim]\n")
+
         try:
-            # Get audio stream with VAD filtering
-            audio_stream = self.mic.stream()
-            if self.vad:
-                audio_stream = self.vad.filter_speech(audio_stream)
-
-            # Process transcriptions
-            last_transcript_time = datetime.now()
-
-            async for transcript in self.stt.transcribe_stream(audio_stream):
-                if not self.running:
-                    break
-
-                # Show interim results
-                if not transcript.is_final:
-                    console.print(f"[dim]... {transcript.text}[/dim]", end="\r")
-                    continue
-
-                # Handle final transcript
-                text = transcript.text.strip()
-                if not text:
-                    continue
-
-                console.print(f"[green]You:[/green] {text}")
-                self.accumulated_text.append(text)
-                last_transcript_time = datetime.now()
-
-                # Check if we should give feedback
-                # Give feedback after natural pause or if they ask a question
-                should_respond = (
-                    text.endswith("?") or
-                    any(phrase in text.lower() for phrase in [
-                        "what do you think",
-                        "how was that",
-                        "any feedback",
-                        "ready",
-                        "let me try",
-                        "done",
-                        "finished",
-                    ])
-                )
-
-                if should_respond or len(self.accumulated_text) >= 3:
-                    await self._provide_feedback()
-
+            await self._listen_loop()
         except KeyboardInterrupt:
             console.print("\n[yellow]Ending coaching session...[/yellow]")
         finally:
@@ -244,6 +203,62 @@ class CoachingAssistant:
                 "Great practice session! Keep it up!",
                 title="Session Summary",
             ))
+
+    async def _listen_loop(self):
+        """Main listening loop with auto-reconnection."""
+        while self.running:
+            try:
+                # Get fresh audio stream with VAD filtering
+                audio_stream = self.mic.stream()
+                if self.vad:
+                    audio_stream = self.vad.filter_speech(audio_stream)
+
+                # Process transcriptions
+                async for transcript in self.stt.transcribe_stream(audio_stream):
+                    if not self.running:
+                        break
+
+                    # Show interim results
+                    if not transcript.is_final:
+                        console.print(f"[dim]... {transcript.text}[/dim]", end="\r")
+                        continue
+
+                    # Handle final transcript
+                    text = transcript.text.strip()
+                    if not text:
+                        continue
+
+                    console.print(f"[green]You:[/green] {text}")
+                    self.accumulated_text.append(text)
+
+                    # Check if we should give feedback
+                    should_respond = (
+                        text.endswith("?") or
+                        any(phrase in text.lower() for phrase in [
+                            "what do you think",
+                            "how was that",
+                            "any feedback",
+                            "ready",
+                            "let me try",
+                            "done",
+                            "finished",
+                        ])
+                    )
+
+                    if should_respond or len(self.accumulated_text) >= 3:
+                        await self._provide_feedback()
+
+            except Exception as e:
+                if "1011" in str(e) or "timeout" in str(e).lower():
+                    # Deepgram timeout - reconnect
+                    console.print("[dim]Reconnecting...[/dim]")
+                    await asyncio.sleep(0.5)
+                    # Recreate STT provider for fresh connection
+                    await self.stt.close()
+                    self.stt = create_stt_provider(self.config)
+                    continue
+                else:
+                    raise
 
     async def _get_initial_greeting(self) -> str:
         """Get initial greeting from the coach."""
