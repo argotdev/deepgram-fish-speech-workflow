@@ -1,0 +1,53 @@
+# Low latency configuration - optimized for fast response times
+# Trades some quality for speed
+
+mode: online
+stt_provider: deepgram
+tts_provider: fish_speech
+echo_mode: false
+streaming_mode: true
+interruption_enabled: true
+
+# Deepgram settings optimized for speed
+deepgram:
+  model: nova-2
+  language: en-US
+  smart_format: true
+  interim_results: true
+  utterance_end_ms: 500  # Shorter silence detection
+  vad_events: true
+  diarize: false  # Disable diarization for speed
+
+# Whisper fallback (if needed)
+whisper:
+  model_size: tiny  # Fastest model
+  device: auto
+  compute_type: int8
+
+# Fish Speech TTS settings
+fish_speech:
+  voice_id: default
+  default_speed: 1.1  # Slightly faster speech
+  device: auto
+
+# LLM settings optimized for speed
+llm:
+  provider: openai
+  model: gpt-4o-mini  # Faster than gpt-4o
+  temperature: 0.5
+  max_tokens: 256  # Shorter responses
+  system_prompt: "You are a helpful assistant. Be very brief - respond in 1-2 sentences maximum."
+
+# Audio settings
+audio:
+  input_sample_rate: 16000
+  output_sample_rate: 44100
+  chunk_duration_ms: 50  # Smaller chunks for faster processing
+
+# VAD settings for quick response
+vad:
+  enabled: true
+  threshold: 0.6  # Higher threshold to reduce false positives
+  min_speech_duration_ms: 200
+  min_silence_duration_ms: 400  # Shorter silence trigger
+  padding_ms: 50

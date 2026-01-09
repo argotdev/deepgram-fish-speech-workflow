@@ -1,0 +1,53 @@
+# Default configuration for voice loop
+# Hybrid mode: uses Deepgram online, falls back to Whisper offline
+
+mode: hybrid
+stt_provider: deepgram
+tts_provider: fish_speech
+echo_mode: false
+streaming_mode: true
+interruption_enabled: true
+
+# Deepgram STT settings
+deepgram:
+  model: nova-2
+  language: en-US
+  smart_format: true
+  interim_results: true
+  utterance_end_ms: 1000
+  vad_events: true
+  diarize: false
+
+# Whisper fallback settings
+whisper:
+  model_size: base
+  device: auto
+  compute_type: auto
+
+# Fish Speech TTS settings
+fish_speech:
+  voice_id: default
+  default_speed: 1.0
+  device: auto
+
+# LLM settings (optional)
+llm:
+  provider: null  # Set to openai, anthropic, or local
+  model: null
+  temperature: 0.7
+  max_tokens: 1024
+  system_prompt: "You are a helpful voice assistant. Keep responses concise and conversational."
+
+# Audio settings
+audio:
+  input_sample_rate: 16000
+  output_sample_rate: 44100
+  chunk_duration_ms: 100
+
+# VAD settings
+vad:
+  enabled: true
+  threshold: 0.5
+  min_speech_duration_ms: 250
+  min_silence_duration_ms: 500
+  padding_ms: 100

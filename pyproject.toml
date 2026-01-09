@@ -1,0 +1,85 @@
+[project]
+name = "deepgram-fish-speech-workflow"
+version = "0.1.0"
+description = "Voice loop system combining Deepgram STT with Fish Speech TTS for offline-capable conversational AI"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Stream" }]
+
+dependencies = [
+    # Audio I/O
+    "sounddevice>=0.4.6",
+    "numpy>=1.24.0",
+
+    # STT - Deepgram (2.x for Python 3.9 compat, 3.x+ needs Python 3.10)
+    "deepgram-sdk>=2.12.0,<3.0.0",
+
+    # STT - Local fallback
+    "faster-whisper>=1.0.0",
+
+    # TTS - Fish Speech (requires Python 3.10+, optional)
+    "torch>=2.0.0",
+    "torchaudio>=2.0.0",
+
+    # TTS - Fish Audio API (Python 3.9+ compatible)
+    "fish-audio-sdk>=0.1.0",  # Fish Speech V1.5 cloud API
+
+    # TTS - Alternatives (Python 3.9 compatible)
+    "pyttsx3>=2.90",  # Offline system TTS
+    "edge-tts>=6.1.0",  # Microsoft neural TTS (needs internet)
+    "pydub>=0.25.0",  # For MP3 decoding
+
+    # VAD
+    "onnxruntime>=1.16.0",
+
+    # Configuration
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    "python-dotenv>=1.0.0",
+    "pyyaml>=6.0",
+
+    # Async
+    "aiofiles>=23.0.0",
+
+    # Utilities
+    "rich>=13.0.0",
+    "structlog>=23.0.0",
+]
+
+[project.optional-dependencies]
+llm = [
+    "openai>=1.0.0",
+    "anthropic>=0.25.0",
+    "httpx>=0.25.0",
+]
+
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.0.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.9"
+strict = true
