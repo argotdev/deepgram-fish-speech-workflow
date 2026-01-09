@@ -79,8 +79,10 @@ class DeepgramSTT(STTProvider):
             "model": self.config.model,
             "language": self.config.language,
             "smart_format": self.config.smart_format,
+            "punctuate": True,  # Required for proper sentence detection
             "interim_results": self.config.interim_results,
             "utterance_end_ms": str(self.config.utterance_end_ms),
+            "endpointing": str(self.config.utterance_end_ms),  # Backup endpoint detection
             "vad_events": self.config.vad_events,
             "diarize": self.config.diarize,
             "encoding": "linear16",
@@ -90,6 +92,9 @@ class DeepgramSTT(STTProvider):
 
         # Queue to pass results from callback to async iterator
         result_queue: asyncio.Queue[Optional[TranscriptResult]] = asyncio.Queue()
+
+        # Track the latest interim transcript for utterance_end handling
+        latest_interim: dict = {"text": "", "words": [], "confidence": 1.0, "speaker_id": None}
 
         async def on_message(result, **kwargs):
             """Handle transcription results."""
@@ -140,9 +145,11 @@ class DeepgramSTT(STTProvider):
 
                             # Determine if this is a final result
                             if isinstance(result, dict):
-                                is_final = result.get("is_final", True)
+                                is_final = result.get("is_final", False)
+                                speech_final = result.get("speech_final", False)
                             else:
-                                is_final = getattr(result, "is_final", True)
+                                is_final = getattr(result, "is_final", False)
+                                speech_final = getattr(result, "speech_final", False)
 
                             # Get speaker ID if diarization is enabled
                             speaker_id = None
@@ -150,9 +157,19 @@ class DeepgramSTT(STTProvider):
                             if alt_speaker is not None:
                                 speaker_id = str(alt_speaker)
 
+                            # Store interim results for potential utterance_end finalization
+                            if not is_final:
+                                latest_interim["text"] = transcript_text
+                                latest_interim["words"] = words
+                                latest_interim["confidence"] = alt.get("confidence", 1.0) if isinstance(alt, dict) else getattr(alt, "confidence", 1.0)
+                                latest_interim["speaker_id"] = speaker_id
+
+                            # Treat speech_final OR is_final as final
+                            actual_final = is_final or speech_final
+
                             transcript = TranscriptResult(
                                 text=transcript_text,
-                                is_final=is_final,
+                                is_final=actual_final,
                                 confidence=alt.get("confidence", 1.0) if isinstance(alt, dict) else getattr(alt, "confidence", 1.0),
                                 speaker_id=speaker_id,
                                 words=words,
@@ -161,8 +178,31 @@ class DeepgramSTT(STTProvider):
 
                             await result_queue.put(transcript)
 
+                            # Clear interim if we got a final
+                            if actual_final:
+                                latest_interim["text"] = ""
+
             except Exception as e:
                 logger.error("Error processing Deepgram result", error=str(e))
+
+        async def on_utterance_end(data=None, **kwargs):
+            """Handle utterance end events - finalize pending transcripts."""
+            try:
+                # If we have accumulated interim text, emit it as final
+                if latest_interim["text"].strip():
+                    logger.debug("Utterance end detected, finalizing transcript", text=latest_interim["text"][:50])
+                    transcript = TranscriptResult(
+                        text=latest_interim["text"],
+                        is_final=True,
+                        confidence=latest_interim["confidence"],
+                        speaker_id=latest_interim["speaker_id"],
+                        words=latest_interim["words"],
+                        timestamp=datetime.now(),
+                    )
+                    await result_queue.put(transcript)
+                    latest_interim["text"] = ""
+            except Exception as e:
+                logger.error("Error handling utterance end", error=str(e))
 
         async def on_error(error, **kwargs):
             """Handle WebSocket errors."""
@@ -189,6 +229,15 @@ class DeepgramSTT(STTProvider):
             socket.registerHandler(socket.event.ERROR, on_error)
             socket.registerHandler(socket.event.CLOSE, on_close)
 
+            # Register utterance end handler if available (SDK 2.x may use different names)
+            try:
+                if hasattr(socket.event, "UTTERANCE_END"):
+                    socket.registerHandler(socket.event.UTTERANCE_END, on_utterance_end)
+                elif hasattr(socket.event, "UtteranceEnd"):
+                    socket.registerHandler(socket.event.UtteranceEnd, on_utterance_end)
+            except Exception as e:
+                logger.debug("Could not register utterance_end handler", error=str(e))
+
             # Task to send audio to Deepgram
             async def send_audio():
                 try:
@@ -209,14 +258,35 @@ class DeepgramSTT(STTProvider):
             # Start sending audio in background
             send_task = asyncio.create_task(send_audio())
 
+            # Track time since last transcript for timeout-based finalization
+            last_transcript_time = datetime.now()
+            silence_finalize_ms = self.config.utterance_end_ms + 500  # Extra buffer
+
             # Yield results as they come in
             while True:
                 try:
-                    result = await asyncio.wait_for(result_queue.get(), timeout=1.0)
+                    result = await asyncio.wait_for(result_queue.get(), timeout=0.5)
                     if result is None:
                         break
+                    last_transcript_time = datetime.now()
                     yield result
                 except asyncio.TimeoutError:
+                    # Check if we should finalize based on silence timeout
+                    silence_duration = (datetime.now() - last_transcript_time).total_seconds() * 1000
+                    if latest_interim["text"].strip() and silence_duration > silence_finalize_ms:
+                        logger.debug("Timeout-based finalization", silence_ms=silence_duration)
+                        transcript = TranscriptResult(
+                            text=latest_interim["text"],
+                            is_final=True,
+                            confidence=latest_interim["confidence"],
+                            speaker_id=latest_interim["speaker_id"],
+                            words=latest_interim["words"],
+                            timestamp=datetime.now(),
+                        )
+                        latest_interim["text"] = ""
+                        last_transcript_time = datetime.now()
+                        yield transcript
+
                     if send_task.done():
                         # Check for any remaining results
                         try:
@@ -226,6 +296,16 @@ class DeepgramSTT(STTProvider):
                                     break
                                 yield result
                         except asyncio.QueueEmpty:
+                            # Final check for pending interim transcript
+                            if latest_interim["text"].strip():
+                                yield TranscriptResult(
+                                    text=latest_interim["text"],
+                                    is_final=True,
+                                    confidence=latest_interim["confidence"],
+                                    speaker_id=latest_interim["speaker_id"],
+                                    words=latest_interim["words"],
+                                    timestamp=datetime.now(),
+                                )
                             break
 
             # Ensure send task is complete
