@@ -142,10 +142,8 @@ class CoachingAssistant:
         # Local VAD can cut off speech too aggressively
         self.config.vad.enabled = False
 
-        # Set consistent Fish Audio voice - "ElevenLabs Adam" (clear English male voice)
-        # Override with FISH_SPEECH_REFERENCE_ID in .env for custom voice
-        if not self.config.fish_speech.reference_id:
-            self.config.fish_speech.reference_id = "728f6ff2240d49308e8137ffe66008e2"
+        # Fish Audio voice - set FISH_SPEECH_REFERENCE_ID in .env for custom voice
+        # Without reference_id, Fish Audio uses its default voice
 
         # Configure LLM
         self.config.llm.provider = llm_provider
@@ -212,7 +210,7 @@ class CoachingAssistant:
 
     async def _listen_loop(self):
         """Main listening loop with auto-reconnection."""
-        response_delay = 3.0  # Wait 3 seconds after last speech before responding
+        response_delay = 1.5  # Wait 1.5 seconds after last speech before responding
         pending_response_task = None
 
         while self.running:
