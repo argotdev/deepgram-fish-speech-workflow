@@ -317,15 +317,23 @@ class CoachingAssistant:
         self.mic.mute()  # Prevent echo
 
         try:
-            # Extract emotion tag if present, otherwise use friendly default
+            # Extract emotion tag if present (e.g., [happy], [serious])
             emotion = None
-            if text.startswith("[") and "]" in text:
-                end_bracket = text.index("]")
-                emotion = text[1:end_bracket]
-                text = text[end_bracket + 1:].strip()
+            import re
+            emotion_match = re.search(r'\[(\w+)\]', text)
+            if emotion_match:
+                potential_emotion = emotion_match.group(1).lower()
+                valid_emotions = ["happy", "sad", "angry", "excited", "calm",
+                                  "serious", "friendly", "neutral", "fearful", "surprised"]
+                if potential_emotion in valid_emotions:
+                    emotion = potential_emotion
+                    text = text.replace(emotion_match.group(0), "").strip()
+
+            # Clean markdown formatting for TTS
+            clean_text = self._clean_for_speech(text)
 
             request = TTSRequest(
-                text=text,
+                text=clean_text,
                 voice_id="default",
                 emotion=emotion,
                 speed=1.0,
@@ -340,6 +348,38 @@ class CoachingAssistant:
         finally:
             self.speaking = False
             self.mic.unmute()
+
+    def _clean_for_speech(self, text: str) -> str:
+        """Clean text for natural speech synthesis."""
+        import re
+
+        # Remove markdown bold/italic
+        text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)  # **bold**
+        text = re.sub(r'\*(.+?)\*', r'\1', text)      # *italic*
+        text = re.sub(r'__(.+?)__', r'\1', text)      # __bold__
+        text = re.sub(r'_(.+?)_', r'\1', text)        # _italic_
+
+        # Remove markdown headers
+        text = re.sub(r'^#+\s*', '', text, flags=re.MULTILINE)  # # Header
+
+        # Remove bullet points
+        text = re.sub(r'^\s*[-*•]\s*', '', text, flags=re.MULTILINE)
+
+        # Remove numbered lists formatting but keep the content
+        text = re.sub(r'^\s*\d+\.\s*', '', text, flags=re.MULTILINE)
+
+        # Remove code blocks
+        text = re.sub(r'```[\s\S]*?```', '', text)
+        text = re.sub(r'`(.+?)`', r'\1', text)
+
+        # Remove links but keep text
+        text = re.sub(r'\[(.+?)\]\(.+?\)', r'\1', text)
+
+        # Clean up extra whitespace
+        text = re.sub(r'\n\s*\n', '\n', text)
+        text = re.sub(r'  +', ' ', text)
+
+        return text.strip()
 
     async def _cleanup(self):
         """Clean up resources."""
